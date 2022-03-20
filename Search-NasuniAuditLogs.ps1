@@ -1,3 +1,4 @@
+[CmdletBinding()]
 <#
 .SYNOPSIS
      Collect and search Nasuni audit logs
@@ -10,40 +11,35 @@
     https://github.com/wipash/ops-scripts
 #>
 
-# Dates to search, comma separated
-$dates = "20180822", "20180823"
+Param (
+    [Parameter()]
+    [string[]] $Dates,
+    [Parameter()]
+    [string[]] $Volumes,
+    [Parameter()]
+    [string] $Search,
+    [Parameter()]
+    [string] $FilerPath,
+    [Parameter()]
+    [string] $OutputFolder = 'D:\audit\'
+)
 
-# Volumes to search audit logs for, comma separated
-$volumes = "PrimaryVolume", "Archive"
-
-# String to search for
-$searchstring = "Example/path"
-
-# Folder to output results csv
-$outfolder = "D:\audit\"
-
-# Folder to store dated folders of raw audit logs
-$rawauditfolder = "D:\audit\"
-
-# Path to the local filer
-$auditpath = "\\local-filer.domain.com\"
-
-function Prepend-Text ($text) {
+function Add-TextToPipelineInput ($text) {
     process {
-        ForEach-Object { $text + "," + $_ }
+        ForEach-Object { $text + ',' + $_ }
     }
 }
 
 $searchresults = @()
 
-foreach ($volume in $volumes) {
-    foreach ($date in $dates) {
+foreach ($volume in $Volumes) {
+    foreach ($date in $Dates) {
 
-        $localtemp = "$($rawauditfolder)$($date)-$($volume)\"
+        $localtemp = "$($OutputFolder)$($date)-$($volume)\"
         if (!(Test-Path -Path $localtemp -PathType Container)) {
 
             New-Item -ItemType Directory -Force -Path $localtemp | Out-Null
-            Get-ChildItem "$auditpath$volume\.nasuni\audit" | ForEach-Object {
+            Get-ChildItem "$FilerPath$volume\.nasuni\audit" | ForEach-Object {
                 $filername = $_.Name
                 $datefolder = "$($_.FullName)\$date"
                 Get-ChildItem $datefolder -ErrorAction SilentlyContinue | ForEach-Object {
@@ -57,18 +53,18 @@ foreach ($volume in $volumes) {
         Write-Output "Searching $volume - $date"
         Get-ChildItem $localtemp | ForEach-Object {
             $filername = $($_.Name).Substring(0, $($_.Name).IndexOf("-$date"))
-            $searchresults += Select-String -InputObject $_ -Pattern $searchstring | Select-Object -ExpandProperty Line | Prepend-Text -text $volume | Prepend-Text -text $filername
+            $searchresults += Select-String -InputObject $_ -Pattern $Search | Select-Object -ExpandProperty Line | Add-TextToPipelineInput -text $volume | Add-TextToPipelineInput -text $filername
         }
     }
 }
 
 if ($searchresults) {
-    $outputfilename = "results-$($dates -join '-')-$($volumes -join '-')-$($searchstring).csv"
+    $outputfilename = "results-$($Dates -join '-')-$($Volumes -join '-')-$($Search).csv"
     [System.IO.Path]::GetInvalidFileNameChars() | ForEach-Object { $outputfilename = $outputfilename.Replace($_, '.') }
-    $header = "filer", "volume", "timestamp(UTC)", "category", "event type", "path/from", "new path/to", "user", "group", "sid", "share/export name", "volume type", "client IP", "snapshot timestamp(UTC)", "shared link"
-    $searchresults | ConvertFrom-Csv -Header $header | Sort-Object "timestamp(UTC)" | Export-Csv -Path "$outfolder$outputfilename" -NoTypeInformation
-    Write-Output "Found $($searchresults.Count) lines for $searchstring on $date"
+    $header = 'filer', 'volume', 'timestamp(UTC)', 'category', 'event type', 'path/from', 'new path/to', 'user', 'group', 'sid', 'share/export name', 'volume type', 'client IP', 'snapshot timestamp(UTC)', 'shared link'
+    $searchresults | ConvertFrom-Csv -Header $header | Sort-Object 'timestamp(UTC)' | Export-Csv -Path "$OutputFolder$outputfilename" -NoTypeInformation
+    Write-Output "Found $($searchresults.Count) lines for $Search on $date"
 }
 else {
-    Write-Output "No results for $searchstring on dates $($dates -join '-')"
+    Write-Output "No results for $Search on dates $($Dates -join '-')"
 }
