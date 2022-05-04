@@ -1,3 +1,4 @@
+#requires -Version 7
 [CmdletBinding()]
 <#
 .SYNOPSIS
@@ -9,19 +10,23 @@
      Author     : Sean McGrath
 .LINK
     https://github.com/wipash/ops-scripts
+.EXAMPLE
+    C:\> Search-NasuniAuditLogs -Dates 20220301, 20220302 -Volume
 #>
 
 Param (
     [Parameter()]
-    [string[]] $Dates,
+    [string] $StartDate,
     [Parameter()]
-    [string[]] $Volumes,
+    [string] $EndDate,
+    [Parameter()]
+    [string[]] $VolumeRootShares,
     [Parameter()]
     [string] $Search,
     [Parameter()]
     [string] $FilerPath,
     [Parameter()]
-    [string] $OutputFolder = 'D:\audit\'
+    [string] $OutputFolder = 'D:\audit'
 )
 
 function Add-TextToPipelineInput ($text) {
@@ -32,19 +37,20 @@ function Add-TextToPipelineInput ($text) {
 
 $searchresults = @()
 
-foreach ($volume in $Volumes) {
+foreach ($volume in $VolumeRootShares) {
     foreach ($date in $Dates) {
 
-        $localtemp = "$($OutputFolder)$($date)-$($volume)\"
+        $localtemp = Join-Path $OutputFolder "$date-$volume"
         if (!(Test-Path -Path $localtemp -PathType Container)) {
 
             New-Item -ItemType Directory -Force -Path $localtemp | Out-Null
-            Get-ChildItem "$FilerPath$volume\.nasuni\audit" | ForEach-Object {
+            $AuditPath = Join-Path $FilerPath $volume ".nasuni" "audit"
+            Get-ChildItem $AuditPath | ForEach-Object {
                 $filername = $_.Name
-                $datefolder = "$($_.FullName)\$date"
+                $datefolder = Join-Path $_.FullName "$date"
                 Get-ChildItem $datefolder -ErrorAction SilentlyContinue | ForEach-Object {
                     Write-Output "Getting $volume - $date - $filername"
-                    $destinationname = "$($localtemp)\$($filername)-$($date)-$($volume)-$($_.Name)"
+                    $destinationname = Join-Path $localtemp "$filername-$date-$volume-$($_.Name)"
                     Copy-Item -Path $_.FullName -Destination $destinationname
                 }
             }
@@ -59,7 +65,7 @@ foreach ($volume in $Volumes) {
 }
 
 if ($searchresults) {
-    $outputfilename = "results-$($Dates -join '-')-$($Volumes -join '-')-$($Search).csv"
+    $outputfilename = "results-$($Dates -join '-')-$($VolumeRootShares -join '-')-$($Search).csv"
     [System.IO.Path]::GetInvalidFileNameChars() | ForEach-Object { $outputfilename = $outputfilename.Replace($_, '.') }
     $header = 'filer', 'volume', 'timestamp(UTC)', 'category', 'event type', 'path/from', 'new path/to', 'user', 'group', 'sid', 'share/export name', 'volume type', 'client IP', 'snapshot timestamp(UTC)', 'shared link'
     $searchresults | ConvertFrom-Csv -Header $header | Sort-Object 'timestamp(UTC)' | Export-Csv -Path "$OutputFolder$outputfilename" -NoTypeInformation
